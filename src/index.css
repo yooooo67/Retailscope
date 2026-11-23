@@ -1,0 +1,69 @@
+@import 'tailwindcss';
+
+@theme {
+  /* RETAILSCOPE design tokens — premium minimal */
+  --color-navy-50: #f2f5f8;
+  --color-navy-100: #e2e8ef;
+  --color-navy-200: #c5d0dd;
+  --color-navy-300: #9db0c4;
+  --color-navy-400: #6f8aa5;
+  --color-navy-500: #4d6a85;
+  --color-navy-600: #35536c;
+  --color-navy-700: #25435b;
+  --color-navy-800: #1b3549;
+  --color-navy-900: #172c42;
+  --color-navy-950: #0f1d2d;
+
+  --color-bg: #f6f7f5;
+  --color-surface: #ffffff;
+  --color-teal: #4d8c83;
+  --color-teal-dark: #3d726b;
+  --color-slate-muted: #8b98a5;
+  --color-ink: #172c42;
+  --color-ink-secondary: #697887;
+  --color-line: #e5e9e8;
+
+  --color-success: #3f7d5d;
+  --color-success-bg: #eef5f0;
+  --color-warning: #a67c2e;
+  --color-warning-bg: #f7f2e7;
+  --color-danger: #b0503f;
+  --color-danger-bg: #f8ecea;
+  --color-info: #4a6f9e;
+  --color-info-bg: #edf2f8;
+
+  --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, sans-serif;
+
+  --radius-md: 8px;
+  --radius-lg: 12px;
+
+  --shadow-card: 0 1px 2px rgb(23 44 66 / 0.04), 0 1px 3px rgb(23 44 66 / 0.05);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  @apply bg-bg text-ink font-sans antialiased;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+::selection {
+  background: rgb(77 140 131 / 0.2);
+}
+
+/* Print: hide app chrome, expand content */
+@media print {
+  aside,
+  header,
+  .no-print {
+    display: none !important;
+  }
+  body {
+    background: #fff;
+  }
+}
