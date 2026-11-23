@@ -32,8 +32,30 @@ export function LoginPage() {
   const {
     register,
     handleSubmit,
+    getValues,
     formState: { errors },
   } = useForm<LoginFormValues>({ resolver: zodResolver(loginSchema) })
+
+  const [resetting, setResetting] = useState(false)
+
+  const onForgot = async () => {
+    if (demoMode || !supabase) return
+    const email = getValues('email')
+    if (!z.string().email().safeParse(email).success) {
+      toast.error('Enter your email above first, then request a reset link.')
+      return
+    }
+    setResetting(true)
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/reset-password`,
+    })
+    setResetting(false)
+    if (error) {
+      toast.error(error.message)
+      return
+    }
+    toast.success(t('auth.resetSent'))
+  }
 
   if (status === 'authenticated') return <Navigate to="/dashboard" replace />
   if (status === 'loading') return null
@@ -120,6 +142,16 @@ export function LoginPage() {
               <Button type="submit" className="w-full" disabled={submitting}>
                 {submitting ? '…' : t('auth.signIn')}
               </Button>
+              {!demoMode && (
+                <button
+                  type="button"
+                  onClick={onForgot}
+                  disabled={resetting}
+                  className="w-full text-center text-[13px] text-teal hover:underline disabled:opacity-50"
+                >
+                  {resetting ? '…' : t('auth.forgot')}
+                </button>
+              )}
             </form>
           </CardContent>
         </Card>

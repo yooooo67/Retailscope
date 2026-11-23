@@ -68,6 +68,18 @@ const en = {
   'auth.email': 'Email',
   'auth.password': 'Password',
   'auth.welcome': 'Welcome back',
+  'auth.forgot': 'Forgot password?',
+  'auth.resetTitle': 'Reset your password',
+  'auth.newPassword': 'New password',
+  'auth.confirmPassword': 'Confirm password',
+  'auth.sendReset': 'Send reset link',
+  'auth.resetSent': 'If that email exists, a reset link is on its way. Check your inbox.',
+  'auth.backToSignIn': 'Back to sign in',
+  'auth.resetSuccess': 'Password updated — you can sign in now.',
+  'auth.resetInvalid': 'This reset link is invalid or has expired. Request a new one.',
+  'auth.passwordMismatch': 'Passwords do not match.',
+  'auth.passwordTooShort': 'Password must be at least 8 characters.',
+  'auth.updatePassword': 'Update password',
 } as const
 
 export type I18nKey = keyof typeof en
@@ -134,6 +146,18 @@ const it: Record<I18nKey, string> = {
   'auth.email': 'Email',
   'auth.password': 'Password',
   'auth.welcome': 'Bentornato',
+  'auth.forgot': 'Password dimenticata?',
+  'auth.resetTitle': 'Reimposta la password',
+  'auth.newPassword': 'Nuova password',
+  'auth.confirmPassword': 'Conferma password',
+  'auth.sendReset': 'Invia link di reset',
+  'auth.resetSent': 'Se l’email esiste, un link di reset è in arrivo. Controlla la posta.',
+  'auth.backToSignIn': 'Torna all’accesso',
+  'auth.resetSuccess': 'Password aggiornata — ora puoi accedere.',
+  'auth.resetInvalid': 'Link di reset non valido o scaduto. Richiedine uno nuovo.',
+  'auth.passwordMismatch': 'Le password non coincidono.',
+  'auth.passwordTooShort': 'La password deve avere almeno 8 caratteri.',
+  'auth.updatePassword': 'Aggiorna password',
 }
 
 const DICTS: Record<'en' | 'it', Record<I18nKey, string>> = { en, it }
