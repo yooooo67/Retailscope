@@ -9,46 +9,23 @@ import { ErrorState } from '@/components/shared/ErrorState'
 import { LoadingState } from '@/components/shared/LoadingState'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { StatCard } from '@/components/shared/StatCard'
-import { useAuth } from '@/hooks/useAuth'
 import { useDashboardStats } from '@/hooks/useDashboardStats'
-import { useProfile } from '@/hooks/useProfile'
 import { formatCurrency } from '@/lib/utils'
-import { DEMO_ACTIVITIES, DEMO_PROPERTIES, DEMO_TRANSACTIONS } from '@/lib/demoData'
-import { isSupabaseConfigured } from '@/lib/supabase'
 import { useI18n } from '@/lib/i18n'
-import { useLocalCollection, useTombstones } from '@/lib/localStore'
-import type { DemoActivity, DemoProperty, DemoTransaction } from '@/lib/demoData'
+import { useActivities, useProperties, useTransactions } from '@/hooks/useWorkspaceData'
 import { StatusBadge, formatDateTime, money } from '../shared/statusBadges'
 
 export function DashboardPage() {
-  const { user } = useAuth()
-  const { data: profile } = useProfile(user?.id)
   const [range, setRange] = useState('30d')
-  const demoMode = !isSupabaseConfigured
   const { t } = useI18n()
-  const customProps = useLocalCollection<DemoProperty>('retailscope.local.properties')
-  const customTx = useLocalCollection<DemoTransaction>('retailscope.local.transactions')
-  const customActs = useLocalCollection<DemoActivity>('retailscope.local.activities')
-  const delProps = useTombstones('retailscope.local.properties.deleted')
-  const delTx = useTombstones('retailscope.local.transactions.deleted')
-  const delActs = useTombstones('retailscope.local.activities.deleted')
-  const propIds = new Set(customProps.items.map((p) => p.id))
-  const txIds = new Set(customTx.items.map((t) => t.id))
-  const actIds = new Set(customActs.items.map((a) => a.id))
-  const allProps = [
-    ...customProps.items,
-    ...DEMO_PROPERTIES.filter((p) => !propIds.has(p.id) && !delProps.deletedIds.has(p.id)),
-  ]
-  const allTx = [
-    ...customTx.items,
-    ...DEMO_TRANSACTIONS.filter((t) => !txIds.has(t.id) && !delTx.deletedIds.has(t.id)),
-  ]
-  const allActs = [
-    ...customActs.items,
-    ...DEMO_ACTIVITIES.filter((a) => !actIds.has(a.id) && !delActs.deletedIds.has(a.id)),
-  ]
+  const props = useProperties()
+  const txs = useTransactions()
+  const acts = useActivities()
+  const allProps = props.rows
+  const allTx = txs.rows
+  const allActs = acts.rows
 
-  const stats = useDashboardStats(profile?.agency_id)
+  const stats = useDashboardStats()
 
   return (
     <div>
@@ -141,7 +118,7 @@ export function DashboardPage() {
             <CardDescription>{t('dashboard.recentTxDesc')}</CardDescription>
           </CardHeader>
           <CardContent className="p-0">
-            {demoMode ? (
+            {allTx.length > 0 ? (
               <ul className="divide-y divide-line">
                 {allTx.slice(0, 4).map((t) => (
                   <li key={t.id} className="flex items-center gap-3 px-5 py-3">
@@ -171,7 +148,7 @@ export function DashboardPage() {
             <CardDescription>{t('dashboard.recentPropsDesc')}</CardDescription>
           </CardHeader>
           <CardContent className="p-0">
-            {demoMode ? (
+            {allProps.length > 0 ? (
               <ul className="divide-y divide-line">
                 {[...allProps]
                   .sort((a, b) => b.addedAt.localeCompare(a.addedAt))
@@ -205,7 +182,7 @@ export function DashboardPage() {
             <CardDescription>{t('dashboard.upcomingDesc')}</CardDescription>
           </CardHeader>
           <CardContent className="p-0">
-            {demoMode ? (
+            {allActs.some((a) => a.status === 'upcoming') ? (
               <ul className="divide-y divide-line">
                 { allActs.filter((a) => a.status === 'upcoming')
                   .sort((a, b) => a.scheduledAt.localeCompare(b.scheduledAt))

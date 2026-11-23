@@ -1,21 +1,22 @@
 import { Activity as ActivityIcon, Download, Plus } from 'lucide-react'
 import { format } from 'date-fns'
 import * as React from 'react'
+import { toast } from 'sonner'
 import { z } from 'zod'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { EntityFormDialog, type FieldConfig } from '@/components/shared/EntityFormDialog'
+import { LoadingState } from '@/components/shared/LoadingState'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { RowActionsMenu } from '@/components/shared/RowActionsMenu'
 import { Select } from '@/components/ui/select'
-import { DEMO_ACTIVITIES, type ActivityStatus, type ActivityType, type DemoActivity } from '@/lib/demoData'
-import { useLocalCollection, useTombstones } from '@/lib/localStore'
+import { type ActivityStatus, type ActivityType, type DemoActivity } from '@/lib/demoData'
+import { downloadCSV } from '@/lib/exportCsv'
 import { useI18n } from '@/lib/i18n'
 import { useSettings } from '@/lib/settings'
-import { downloadCSV } from '@/lib/exportCsv'
-import { toast } from 'sonner'
+import { useActivities } from '@/hooks/useWorkspaceData'
 import { formatDateTime, StatusBadge } from '../shared/statusBadges'
 
 const TYPES: ActivityType[] = ['call', 'meeting', 'viewing', 'task', 'email']
@@ -70,19 +71,11 @@ function toFormValues(a: DemoActivity) {
 export function ActivitiesPage() {
   const { t } = useI18n()
   const settings = useSettings()
+  const { rows: all, isLoading, add, update, remove, remote } = useActivities()
   const [filter, setFilter] = React.useState('all')
   const [dialogOpen, setDialogOpen] = React.useState(false)
   const [editing, setEditing] = React.useState<DemoActivity | null>(null)
   const [deleting, setDeleting] = React.useState<DemoActivity | null>(null)
-
-  const { items: custom, upsert, remove } = useLocalCollection<DemoActivity>('retailscope.local.activities')
-  const { deletedIds, tombstone } = useTombstones('retailscope.local.activities.deleted')
-
-  const customIds = new Set(custom.map((a) => a.id))
-  const all = [
-    ...custom,
-    ...DEMO_ACTIVITIES.filter((a) => !customIds.has(a.id) && !deletedIds.has(a.id)),
-  ]
 
   const rows = React.useMemo(() => {
     const sorted = [...all].sort(
@@ -112,27 +105,38 @@ export function ActivitiesPage() {
     setDialogOpen(true)
   }
 
-  const onSubmit = (v: ActivityFormValues) => {
-    upsert({
-      id: editing?.id ?? crypto.randomUUID(),
+  const onSubmit = async (v: ActivityFormValues) => {
+    const data = {
       title: v.title,
       type: v.type as ActivityType,
       relatedTo: v.relatedTo,
       scheduledAt: new Date(v.scheduledAt).toISOString(),
       status: v.status as ActivityStatus,
-    })
+    }
+    try {
+      if (editing) {
+        await update(editing.id, data)
+        toast.success('Activity updated')
+      } else {
+        await add(data)
+        toast.success('Activity added')
+      }
+    } catch {
+      toast.error('Could not save — check your connection and try again.')
+    }
   }
 
-  const performDelete = (row: DemoActivity) => {
-    remove(row.id)
-    tombstone(row.id)
+  const performDelete = async (row: DemoActivity) => {
+    try {
+      await remove(row.id)
+      toast.success(`Deleted “${row.title}”`)
+    } catch {
+      toast.error('Could not delete — try again.')
+    }
   }
-  const onDeleteNow = performDelete
 
   const onDelete = () => {
-    if (!deleting) return
-    remove(deleting.id)
-    tombstone(deleting.id)
+    if (deleting) void performDelete(deleting)
   }
 
   const now = new Date().toISOString().slice(0, 16)
@@ -171,7 +175,9 @@ export function ActivitiesPage() {
         }
       />
 
-      {grouped.length === 0 ? (
+      {isLoading ? (
+        <LoadingState rows={6} />
+      ) : grouped.length === 0 ? (
         <Card>
           <EmptyState icon={ActivityIcon} title="No activities" description="Nothing matches this filter." />
         </Card>
@@ -197,7 +203,7 @@ export function ActivitiesPage() {
                       <RowActionsMenu
                         label={`Actions for ${a.title}`}
                         onEdit={() => openEdit(a)}
-                        onDelete={() => (settings.confirmDeletes ? setDeleting(a) : onDeleteNow(a))}
+                        onDelete={() => (settings.confirmDeletes ? setDeleting(a) : void performDelete(a))}
                       />
                     </CardContent>
                   </Card>
@@ -208,8 +214,10 @@ export function ActivitiesPage() {
         </div>
       )}
       <p className="mt-4 flex items-center gap-1.5 text-[12px] text-slate-muted">
-        <ActivityIcon className="size-3.5" /> Records you add or edit are stored locally in this browser
-        until the database backend is connected.
+        <ActivityIcon className="size-3.5" />{' '}
+        {remote
+          ? 'Records are stored in your agency database.'
+          : 'Demo mode — records are stored locally in this browser.'}
       </p>
 
       <EntityFormDialog
@@ -222,7 +230,7 @@ export function ActivitiesPage() {
         fields={fields}
         defaultValues={editing ? toFormValues(editing) : { title: '', type: 'call', relatedTo: '', scheduledAt: now, status: 'upcoming' }}
         submitLabel={editing ? 'Save changes' : 'Add activity'}
-        onSubmit={(v) => onSubmit(v as ActivityFormValues)}
+        onSubmit={(v) => void onSubmit(v as ActivityFormValues)}
       />
 
       <ConfirmDialog

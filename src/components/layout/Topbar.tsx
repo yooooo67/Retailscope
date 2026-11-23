@@ -1,5 +1,6 @@
 import { Activity, Bell, Building2, Handshake, LogOut, Menu, Search, User, Users } from 'lucide-react'
 import * as React from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import {
@@ -33,7 +34,12 @@ function Topbar({ profile, agency, onMenuClick, onSignOut }: TopbarProps) {
   const [searchOpen, setSearchOpen] = React.useState(false)
   const [query, setQuery] = React.useState('')
 
-  const results = React.useMemo(() => searchWorkspace(query), [query])
+  const searchQuery = useQuery({
+    queryKey: ['global-search', query],
+    queryFn: () => searchWorkspace(query),
+    enabled: searchOpen && query.trim().length >= 2,
+  })
+  const results = searchQuery.data ?? []
   const grouped = React.useMemo(() => {
     const map = new Map<SearchResultType, typeof results>()
     for (const r of results) {

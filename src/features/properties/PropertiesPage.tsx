@@ -1,19 +1,20 @@
 import { Building2, Download, Plus } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { useState } from 'react'
+import { toast } from 'sonner'
 import { z } from 'zod'
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { DataTable, type Column } from '@/components/shared/DataTable'
 import { EntityFormDialog, type FieldConfig } from '@/components/shared/EntityFormDialog'
+import { LoadingState } from '@/components/shared/LoadingState'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { RowActionsMenu } from '@/components/shared/RowActionsMenu'
-import { DEMO_PROPERTIES, type DemoProperty, type PropertyCategory, type PropertyStatus } from '@/lib/demoData'
-import { useLocalCollection, useTombstones } from '@/lib/localStore'
+import { type DemoProperty, type PropertyCategory, type PropertyStatus } from '@/lib/demoData'
+import { downloadCSV } from '@/lib/exportCsv'
 import { useI18n } from '@/lib/i18n'
 import { useSettings } from '@/lib/settings'
-import { downloadCSV } from '@/lib/exportCsv'
-import { toast } from 'sonner'
+import { useProperties } from '@/hooks/useWorkspaceData'
 import { formatDate, money, StatusBadge } from '../shared/statusBadges'
 
 const STATUSES: PropertyStatus[] = ['available', 'under_offer', 'let', 'sold']
@@ -106,18 +107,10 @@ function toFormValues(p: DemoProperty) {
 export function PropertiesPage() {
   const { t } = useI18n()
   const settings = useSettings()
+  const { rows, isLoading, add, update, remove, remote } = useProperties()
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editing, setEditing] = useState<DemoProperty | null>(null)
   const [deleting, setDeleting] = useState<DemoProperty | null>(null)
-
-  const { items: custom, upsert, remove } = useLocalCollection<DemoProperty>('retailscope.local.properties')
-  const { deletedIds, tombstone } = useTombstones('retailscope.local.properties.deleted')
-
-  const customIds = new Set(custom.map((c) => c.id))
-  const rows = [
-    ...custom,
-    ...DEMO_PROPERTIES.filter((p) => !customIds.has(p.id) && !deletedIds.has(p.id)),
-  ]
 
   const openNew = () => {
     setEditing(null)
@@ -128,30 +121,41 @@ export function PropertiesPage() {
     setDialogOpen(true)
   }
 
-  const onSubmit = (v: PropertyFormValues) => {
-    const today = new Date().toISOString().slice(0, 10)
-    upsert({
-      id: editing?.id ?? crypto.randomUUID(),
+  const onSubmit = async (v: PropertyFormValues) => {
+    const data = {
       name: v.name,
       category: v.category as PropertyCategory,
       location: v.location,
       areaSqm: v.areaSqm,
       askingValue: v.askingValue,
       status: v.status as PropertyStatus,
-      addedAt: editing?.addedAt ?? today,
-    })
+      addedAt: editing?.addedAt ?? new Date().toISOString().slice(0, 10),
+    }
+    try {
+      if (editing) {
+        const { addedAt: _a, ...patch } = data
+        await update(editing.id, patch)
+        toast.success('Property updated')
+      } else {
+        await add(data)
+        toast.success('Property added')
+      }
+    } catch {
+      toast.error('Could not save — check your connection and try again.')
+    }
   }
 
-  const performDelete = (row: DemoProperty) => {
-    remove(row.id)
-    tombstone(row.id)
+  const performDelete = async (row: DemoProperty) => {
+    try {
+      await remove(row.id)
+      toast.success(`Deleted “${row.name}”`)
+    } catch {
+      toast.error('Could not delete — try again.')
+    }
   }
-  const onDeleteNow = performDelete
 
   const onDelete = () => {
-    if (!deleting) return
-    remove(deleting.id)
-    tombstone(deleting.id)
+    if (deleting) void performDelete(deleting)
   }
 
   return (
@@ -181,28 +185,34 @@ export function PropertiesPage() {
           </>
         }
       />
-      <DataTable
-        columns={columns}
-        rows={rows}
-        rowKey={(p) => p.id}
-        searchPlaceholder="Search properties…"
-        facets={[
-          { label: 'Status', getValue: (p) => p.status.replace('_', ' ') },
-          { label: 'Category', getValue: (p) => p.category },
-        ]}
-        emptyTitle="No properties found"
-        emptyDescription="Add your first property or adjust your filters."
-        rowActions={(p) => (
-          <RowActionsMenu
-            label={`Actions for ${p.name}`}
-            onEdit={() => openEdit(p)}
-            onDelete={() => (settings.confirmDeletes ? setDeleting(p) : onDeleteNow(p))}
-          />
-        )}
-      />
+      {isLoading ? (
+        <LoadingState rows={6} />
+      ) : (
+        <DataTable
+          columns={columns}
+          rows={rows}
+          rowKey={(p) => p.id}
+          searchPlaceholder="Search properties…"
+          facets={[
+            { label: 'Status', getValue: (p) => p.status.replace('_', ' ') },
+            { label: 'Category', getValue: (p) => p.category },
+          ]}
+          emptyTitle="No properties found"
+          emptyDescription="Add your first property or adjust your filters."
+          rowActions={(p) => (
+            <RowActionsMenu
+              label={`Actions for ${p.name}`}
+              onEdit={() => openEdit(p)}
+              onDelete={() => (settings.confirmDeletes ? setDeleting(p) : void performDelete(p))}
+            />
+          )}
+        />
+      )}
       <p className="mt-3 flex items-center gap-1.5 text-[12px] text-slate-muted">
-        <Building2 className="size-3.5" /> Records you add or edit are stored locally in this browser
-        until the database backend is connected.
+        <Building2 className="size-3.5" />{' '}
+        {remote
+          ? 'Records are stored in your agency database.'
+          : 'Demo mode — records are stored locally in this browser.'}
       </p>
 
       <EntityFormDialog
@@ -215,7 +225,7 @@ export function PropertiesPage() {
         fields={fields}
         defaultValues={editing ? toFormValues(editing) : DEFAULTS}
         submitLabel={editing ? 'Save changes' : 'Add property'}
-        onSubmit={(v) => onSubmit(v as PropertyFormValues)}
+        onSubmit={(v) => void onSubmit(v as PropertyFormValues)}
       />
 
       <ConfirmDialog

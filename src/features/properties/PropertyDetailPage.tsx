@@ -4,8 +4,13 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { EmptyState } from '@/components/shared/EmptyState'
-import { DEMO_ACTIVITIES, DEMO_CONTACTS, DEMO_PROPERTIES, DEMO_TRANSACTIONS, type DemoActivity, type DemoContact, type DemoProperty, type DemoTransaction } from '@/lib/demoData'
-import { useLocalCollection, useTombstones } from '@/lib/localStore'
+import { LoadingState } from '@/components/shared/LoadingState'
+import {
+  useActivities,
+  useContacts,
+  useProperties,
+  useTransactions,
+} from '@/hooks/useWorkspaceData'
 import { money, StatusBadge } from '../shared/statusBadges'
 
 function Field({ label, value }: { label: string; value: React.ReactNode }) {
@@ -20,39 +25,22 @@ function Field({ label, value }: { label: string; value: React.ReactNode }) {
 export function PropertyDetailPage() {
   const { id } = useParams<{ id: string }>()
 
-  const { items: customProps } = useLocalCollection<DemoProperty>('retailscope.local.properties')
-  const { items: customContacts } = useLocalCollection<DemoContact>('retailscope.local.contacts')
-  const { items: customTx } = useLocalCollection<DemoTransaction>('retailscope.local.transactions')
-  const { items: customActs } = useLocalCollection<DemoActivity>('retailscope.local.activities')
+  const props = useProperties()
+  const contacts = useContacts()
+  const transactions = useTransactions()
+  const activities = useActivities()
 
-  const delProps = useTombstones('retailscope.local.properties.deleted')
-  const delContacts = useTombstones('retailscope.local.contacts.deleted')
-  const delTx = useTombstones('retailscope.local.transactions.deleted')
-  const delActs = useTombstones('retailscope.local.activities.deleted')
+  const isLoading = props.isLoading || contacts.isLoading || transactions.isLoading || activities.isLoading
+  const property = props.rows.find((p) => p.id === id)
 
-  const propIds = new Set(customProps.map((p) => p.id))
-  const contactIds = new Set(customContacts.map((c) => c.id))
-  const txIds = new Set(customTx.map((t) => t.id))
-  const actIds = new Set(customActs.map((a) => a.id))
-
-  const properties = [
-    ...customProps,
-    ...DEMO_PROPERTIES.filter((p) => !propIds.has(p.id) && !delProps.deletedIds.has(p.id)),
-  ]
-  const contacts = [
-    ...customContacts,
-    ...DEMO_CONTACTS.filter((c) => !contactIds.has(c.id) && !delContacts.deletedIds.has(c.id)),
-  ]
-  const transactions = [
-    ...customTx,
-    ...DEMO_TRANSACTIONS.filter((t) => !txIds.has(t.id) && !delTx.deletedIds.has(t.id)),
-  ]
-  const activities = [
-    ...customActs,
-    ...DEMO_ACTIVITIES.filter((a) => !actIds.has(a.id) && !delActs.deletedIds.has(a.id)),
-  ]
-
-  const property = properties.find((p) => p.id === id)
+  if (isLoading) {
+    return (
+      <div>
+        <PageHeader title="Property" />
+        <LoadingState rows={6} />
+      </div>
+    )
+  }
 
   if (!property) {
     return (
@@ -76,14 +64,15 @@ export function PropertyDetailPage() {
     )
   }
 
-  const linkedContacts = contacts.filter((c) => c.propertyIds?.includes(property.id))
-  const relatedTx = transactions.filter(
+  const linkedContacts = contacts.rows.filter((c) => c.propertyIds?.includes(property.id))
+  const relatedTx = transactions.rows.filter(
     (t) =>
       t.name.toLowerCase().includes(property.name.toLowerCase()) ||
-      (t.category === property.category && t.counterparty &&
+      (t.category === property.category &&
+        t.counterparty &&
         linkedContacts.some((c) => c.company === t.counterparty)),
   )
-  const relatedActs = activities.filter((a) =>
+  const relatedActs = activities.rows.filter((a) =>
     a.relatedTo.toLowerCase().includes(property.name.toLowerCase()),
   )
 
@@ -115,7 +104,6 @@ export function PropertyDetailPage() {
       />
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        {/* Details */}
         <Card className="lg:col-span-2">
           <CardHeader>
             <CardTitle>Details</CardTitle>
@@ -130,7 +118,6 @@ export function PropertyDetailPage() {
           </CardContent>
         </Card>
 
-        {/* Linked contacts */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -159,7 +146,6 @@ export function PropertyDetailPage() {
       </div>
 
       <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
-        {/* Related deals */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -186,7 +172,6 @@ export function PropertyDetailPage() {
           </CardContent>
         </Card>
 
-        {/* Related activities */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">

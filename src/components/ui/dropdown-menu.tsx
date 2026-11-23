@@ -1,5 +1,6 @@
 import { Check } from 'lucide-react'
 import * as React from 'react'
+import { createPortal } from 'react-dom'
 import { cn } from '@/lib/utils'
 import { Button } from './button'
 
@@ -10,45 +11,81 @@ interface DropdownMenuProps {
   width?: string
 }
 
+const WIDTH_PX: Record<string, number> = {
+  'w-36': 144,
+  'w-44': 176,
+  'w-48': 192,
+  'w-56': 224,
+  'w-64': 256,
+}
+
 /**
- * Lightweight accessible dropdown menu. Closes on Escape, outside click,
- * and item selection.
+ * Lightweight accessible dropdown menu rendered in a portal so it is never
+ * clipped by scrollable ancestors (tables, cards). Closes on Escape, outside
+ * click, scroll and item selection.
  */
 function DropdownMenu({ trigger, children, align = 'right', width = 'w-56' }: DropdownMenuProps) {
   const [open, setOpen] = React.useState(false)
+  const [pos, setPos] = React.useState<{ top: number; left: number } | null>(null)
   const ref = React.useRef<HTMLDivElement>(null)
+  const menuRef = React.useRef<HTMLDivElement>(null)
+
+  const updatePos = React.useCallback(() => {
+    const el = ref.current
+    if (!el) return
+    const rect = el.getBoundingClientRect()
+    const w = WIDTH_PX[width] ?? 224
+    setPos({
+      top: rect.bottom + 6,
+      left: align === 'right' ? rect.right - w : rect.left,
+    })
+  }, [align, width])
 
   React.useEffect(() => {
     if (!open) return
+    updatePos()
     const onPointer = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+      const target = e.target as Node
+      if (ref.current?.contains(target) || menuRef.current?.contains(target)) return
+      setOpen(false)
     }
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') setOpen(false)
     }
+    const close = () => setOpen(false)
     document.addEventListener('mousedown', onPointer)
     document.addEventListener('keydown', onKey)
+    window.addEventListener('resize', close)
+    window.addEventListener('scroll', close, true)
     return () => {
       document.removeEventListener('mousedown', onPointer)
       document.removeEventListener('keydown', onKey)
+      window.removeEventListener('resize', close)
+      window.removeEventListener('scroll', close, true)
     }
-  }, [open])
+  }, [open, updatePos])
 
   return (
-    <div ref={ref} className="relative">
+    <div ref={ref} className="relative inline-block">
       <div onClick={() => setOpen((v) => !v)}>{trigger}</div>
-      {open && (
-        <div
-          role="menu"
-          className={cn(
-            'absolute top-full z-40 mt-1.5 overflow-hidden rounded-lg border border-line bg-surface py-1 shadow-lg',
-            width,
-            align === 'right' ? 'right-0' : 'left-0',
-          )}
-        >
-          <MenuCloseContext.Provider value={() => setOpen(false)}>{children}</MenuCloseContext.Provider>
-        </div>
-      )}
+      {open &&
+        pos &&
+        createPortal(
+          <div
+            ref={menuRef}
+            role="menu"
+            style={{ top: pos.top, left: pos.left }}
+            className={cn(
+              'fixed z-[60] overflow-hidden rounded-lg border border-line bg-surface py-1 shadow-lg',
+              width,
+            )}
+          >
+            <MenuCloseContext.Provider value={() => setOpen(false)}>
+              {children}
+            </MenuCloseContext.Provider>
+          </div>,
+          document.body,
+        )}
     </div>
   )
 }

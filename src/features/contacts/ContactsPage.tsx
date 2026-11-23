@@ -1,20 +1,21 @@
 import { Download, Plus, Users } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { useState } from 'react'
+import { toast } from 'sonner'
 import { z } from 'zod'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { DataTable, type Column } from '@/components/shared/DataTable'
 import { EntityFormDialog, type FieldConfig } from '@/components/shared/EntityFormDialog'
+import { LoadingState } from '@/components/shared/LoadingState'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { RowActionsMenu } from '@/components/shared/RowActionsMenu'
-import { DEMO_CONTACTS, DEMO_PROPERTIES, type ContactType, type DemoContact, type DemoProperty } from '@/lib/demoData'
-import { useI18n } from '@/lib/i18n'
-import { useLocalCollection, useTombstones } from '@/lib/localStore'
-import { useSettings } from '@/lib/settings'
+import { type ContactType, type DemoContact } from '@/lib/demoData'
 import { downloadCSV } from '@/lib/exportCsv'
-import { toast } from 'sonner'
+import { useI18n } from '@/lib/i18n'
+import { useSettings } from '@/lib/settings'
+import { useContacts, useProperties } from '@/hooks/useWorkspaceData'
 import { StatusBadge } from '../shared/statusBadges'
 
 const TYPES: ContactType[] = ['owner', 'tenant', 'buyer', 'broker', 'service_provider']
@@ -36,7 +37,7 @@ const columns: Column<DemoContact>[] = [
     key: 'name',
     label: 'Name',
     render: (c) => <span className="font-medium">{c.name}</span>,
-    searchText: (c) => `${c.name} ${c.company} ${c.email} ${c.notes}`,
+    searchText: (c) => `${c.name} ${c.company} ${c.email} ${c.notes ?? ''}`,
   },
   { key: 'company', label: 'Company', render: (c) => c.company, searchText: (c) => c.company },
   { key: 'type', label: 'Type', render: (c) => <StatusBadge value={c.type} /> },
@@ -61,26 +62,13 @@ function toFormValues(c: DemoContact) {
 export function ContactsPage() {
   const { t } = useI18n()
   const settings = useSettings()
+  const { rows, isLoading, add, update, remove, remote } = useContacts()
+  const { rows: properties } = useProperties()
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editing, setEditing] = useState<DemoContact | null>(null)
   const [deleting, setDeleting] = useState<DemoContact | null>(null)
 
-  const { items: custom, upsert, remove } = useLocalCollection<DemoContact>('retailscope.local.contacts')
-  const { deletedIds, tombstone } = useTombstones('retailscope.local.contacts.deleted')
-  const { items: customProps } = useLocalCollection<DemoProperty>('retailscope.local.properties')
-
-  const customIds = new Set(custom.map((c) => c.id))
-  const propIds = new Set(customProps.map((p) => p.id))
-  const rows = [
-    ...custom,
-    ...DEMO_CONTACTS.filter((c) => !customIds.has(c.id) && !deletedIds.has(c.id)),
-  ]
-
-  const allProperties = [
-    ...customProps,
-    ...DEMO_PROPERTIES.filter((p) => !propIds.has(p.id)),
-  ]
-  const propertyName = (id: string) => allProperties.find((p) => p.id === id)?.name ?? id
+  const propertyName = (id: string) => properties.find((p) => p.id === id)?.name ?? id
 
   const fields: FieldConfig[] = [
     { name: 'name', label: 'Full name', type: 'text', placeholder: 'e.g. Amara Osei' },
@@ -97,7 +85,7 @@ export function ContactsPage() {
       name: 'propertyIds',
       label: 'Linked properties',
       type: 'multiselect',
-      options: allProperties.map((p) => ({ value: p.id, label: p.name })),
+      options: properties.map((p) => ({ value: p.id, label: p.name })),
       hint: 'Properties this person owns, rents or is interested in.',
     },
     {
@@ -117,9 +105,8 @@ export function ContactsPage() {
     setDialogOpen(true)
   }
 
-  const onSubmit = (v: ContactFormValues) => {
-    upsert({
-      id: editing?.id ?? crypto.randomUUID(),
+  const onSubmit = async (v: ContactFormValues) => {
+    const data = {
       name: v.name,
       company: v.company,
       type: v.type as ContactType,
@@ -127,22 +114,33 @@ export function ContactsPage() {
       phone: v.phone,
       propertyIds: v.propertyIds,
       notes: v.notes,
-    })
+    }
+    try {
+      if (editing) {
+        await update(editing.id, data)
+        toast.success('Contact updated')
+      } else {
+        await add(data)
+        toast.success('Contact added')
+      }
+    } catch {
+      toast.error('Could not save — check your connection and try again.')
+    }
   }
 
-  const performDelete = (row: DemoContact) => {
-    remove(row.id)
-    tombstone(row.id)
+  const performDelete = async (row: DemoContact) => {
+    try {
+      await remove(row.id)
+      toast.success(`Deleted “${row.name}”`)
+    } catch {
+      toast.error('Could not delete — try again.')
+    }
   }
-  const onDeleteNow = performDelete
 
   const onDelete = () => {
-    if (!deleting) return
-    remove(deleting.id)
-    tombstone(deleting.id)
+    if (deleting) void performDelete(deleting)
   }
 
-  // Render linked properties as a dedicated column appended to the table
   const columnsWithLinks: Column<DemoContact>[] = [
     ...columns,
     {
@@ -206,25 +204,31 @@ export function ContactsPage() {
           </>
         }
       />
-      <DataTable
-        columns={columnsWithLinks}
-        rows={rows}
-        rowKey={(c) => c.id}
-        searchPlaceholder="Search contacts…"
-        facets={[{ label: 'Type', getValue: (c) => c.type.replace('_', ' ') }]}
-        emptyTitle="No contacts found"
-        emptyDescription="Add your first contact or adjust your filters."
-        rowActions={(c) => (
-          <RowActionsMenu
-            label={`Actions for ${c.name}`}
-            onEdit={() => openEdit(c)}
-            onDelete={() => (settings.confirmDeletes ? setDeleting(c) : onDeleteNow(c))}
-          />
-        )}
-      />
+      {isLoading ? (
+        <LoadingState rows={6} />
+      ) : (
+        <DataTable
+          columns={columnsWithLinks}
+          rows={rows}
+          rowKey={(c) => c.id}
+          searchPlaceholder="Search contacts…"
+          facets={[{ label: 'Type', getValue: (c) => c.type.replace('_', ' ') }]}
+          emptyTitle="No contacts found"
+          emptyDescription="Add your first contact or adjust your filters."
+          rowActions={(c) => (
+            <RowActionsMenu
+              label={`Actions for ${c.name}`}
+              onEdit={() => openEdit(c)}
+              onDelete={() => (settings.confirmDeletes ? setDeleting(c) : void performDelete(c))}
+            />
+          )}
+        />
+      )}
       <p className="mt-3 flex items-center gap-1.5 text-[12px] text-slate-muted">
-        <Users className="size-3.5" /> Records you add or edit are stored locally in this browser
-        until the database backend is connected.
+        <Users className="size-3.5" />{' '}
+        {remote
+          ? 'Records are stored in your agency database.'
+          : 'Demo mode — records are stored locally in this browser.'}
       </p>
 
       <EntityFormDialog
@@ -237,7 +241,7 @@ export function ContactsPage() {
         fields={fields}
         defaultValues={editing ? toFormValues(editing) : DEFAULTS}
         submitLabel={editing ? 'Save changes' : 'Add contact'}
-        onSubmit={(v) => onSubmit(v as ContactFormValues)}
+        onSubmit={(v) => void onSubmit(v as ContactFormValues)}
       />
 
       <ConfirmDialog

@@ -5,6 +5,13 @@ import {
   DEMO_TRANSACTIONS,
 } from '@/lib/demoData'
 import type { DemoActivity, DemoContact, DemoProperty, DemoTransaction } from '@/lib/demoData'
+import { isSupabaseConfigured, supabase } from '@/lib/supabase'
+import {
+  actFromRow,
+  contactFromRow,
+  propFromRow,
+  txFromRow,
+} from '@/hooks/useWorkspaceData'
 
 export type SearchResultType = 'property' | 'contact' | 'transaction' | 'activity'
 
@@ -44,7 +51,7 @@ function merge<T extends { id: string }>(
   return [...custom, ...seed.filter((s) => !customIds.has(s.id) && !deleted.has(s.id))]
 }
 
-function getWorkspaceData() {
+function getLocalData() {
   return {
     properties: merge<DemoProperty>('retailscope.local.properties', 'retailscope.local.properties.deleted', DEMO_PROPERTIES),
     contacts: merge<DemoContact>('retailscope.local.contacts', 'retailscope.local.contacts.deleted', DEMO_CONTACTS),
@@ -53,23 +60,34 @@ function getWorkspaceData() {
   }
 }
 
-const norm = (s: string) => s.toLowerCase()
-
-function matches(haystack: string, q: string) {
-  return norm(haystack).includes(norm(q))
+async function getRemoteData() {
+  const [props, contacts, txs, acts] = await Promise.all([
+    supabase!.from('properties').select('*'),
+    supabase!.from('contacts').select('*'),
+    supabase!.from('transactions').select('*'),
+    supabase!.from('activities').select('*'),
+  ])
+  return {
+    properties: (props.data ?? []).map((r) => propFromRow(r)),
+    contacts: (contacts.data ?? []).map((r) => contactFromRow(r)),
+    transactions: (txs.data ?? []).map((r) => txFromRow(r)),
+    activities: (acts.data ?? []).map((r) => actFromRow(r)),
+  }
 }
 
-/** Search all workspace modules. Returns grouped-ready flat results, best matches first. */
-export function searchWorkspace(query: string, limit = 30): SearchResult[] {
+const norm = (s: string) => s.toLowerCase()
+const matches = (haystack: string, q: string) => norm(haystack).includes(norm(q))
+
+/** Search all workspace modules against the live DB (or local demo data). */
+export async function searchWorkspace(query: string, limit = 30): Promise<SearchResult[]> {
   const q = query.trim()
   if (q.length < 2) return []
 
-  const { properties, contacts, transactions, activities } = getWorkspaceData()
+  const data = isSupabaseConfigured && supabase ? await getRemoteData() : getLocalData()
   const results: SearchResult[] = []
 
-  for (const p of properties) {
-    const hay = `${p.name} ${p.category} ${p.location} ${p.status}`
-    if (matches(hay, q)) {
+  for (const p of data.properties) {
+    if (matches(`${p.name} ${p.category} ${p.location} ${p.status}`, q)) {
       results.push({
         type: 'property',
         id: p.id,
@@ -80,9 +98,8 @@ export function searchWorkspace(query: string, limit = 30): SearchResult[] {
     }
   }
 
-  for (const c of contacts) {
-    const hay = `${c.name} ${c.company} ${c.email} ${c.type} ${c.notes ?? ''}`
-    if (matches(hay, q)) {
+  for (const c of data.contacts) {
+    if (matches(`${c.name} ${c.company} ${c.email} ${c.type} ${c.notes ?? ''}`, q)) {
       results.push({
         type: 'contact',
         id: c.id,
@@ -93,9 +110,8 @@ export function searchWorkspace(query: string, limit = 30): SearchResult[] {
     }
   }
 
-  for (const t of transactions) {
-    const hay = `${t.name} ${t.counterparty} ${t.category} ${t.status} ${t.type}`
-    if (matches(hay, q)) {
+  for (const t of data.transactions) {
+    if (matches(`${t.name} ${t.counterparty} ${t.category} ${t.status} ${t.type}`, q)) {
       results.push({
         type: 'transaction',
         id: t.id,
@@ -106,9 +122,8 @@ export function searchWorkspace(query: string, limit = 30): SearchResult[] {
     }
   }
 
-  for (const a of activities) {
-    const hay = `${a.title} ${a.relatedTo} ${a.type} ${a.status}`
-    if (matches(hay, q)) {
+  for (const a of data.activities) {
+    if (matches(`${a.title} ${a.relatedTo} ${a.type} ${a.status}`, q)) {
       results.push({
         type: 'activity',
         id: a.id,
@@ -119,7 +134,6 @@ export function searchWorkspace(query: string, limit = 30): SearchResult[] {
     }
   }
 
-  // Exact-ish matches first, then alphabetical within type
   const typeOrder: Record<SearchResultType, number> = {
     property: 0,
     transaction: 1,
