@@ -69,6 +69,9 @@ export function ContactsPage() {
   const [deleting, setDeleting] = useState<DemoContact | null>(null)
 
   const propertyName = (id: string) => properties.find((p) => p.id === id)?.name ?? id
+  /** ids that still point at an existing property (hides dead links) */
+  const livePropertyIds = (c: DemoContact) =>
+    (c.propertyIds ?? []).filter((id) => properties.some((p) => p.id === id))
 
   const fields: FieldConfig[] = [
     { name: 'name', label: 'Full name', type: 'text', placeholder: 'e.g. Amara Osei' },
@@ -112,7 +115,7 @@ export function ContactsPage() {
       type: v.type as ContactType,
       email: v.email,
       phone: v.phone,
-      propertyIds: v.propertyIds,
+      propertyIds: v.propertyIds.filter((id) => properties.some((p) => p.id === id)),
       notes: v.notes,
     }
     try {
@@ -147,9 +150,9 @@ export function ContactsPage() {
       key: 'linked',
       label: 'Linked properties',
       render: (c) =>
-        c.propertyIds?.length ? (
+        livePropertyIds(c).length ? (
           <span className="flex max-w-[220px] flex-wrap gap-1">
-            {c.propertyIds.slice(0, 3).map((id) => (
+            {livePropertyIds(c).slice(0, 3).map((id) => (
               <Link
                 key={id}
                 to={`/properties/${id}`}
@@ -161,16 +164,16 @@ export function ContactsPage() {
                 </Badge>
               </Link>
             ))}
-            {c.propertyIds.length > 3 && (
+            {livePropertyIds(c).length > 3 && (
               <Badge variant="outline" className="font-normal">
-                +{c.propertyIds.length - 3}
+                +{livePropertyIds(c).length - 3}
               </Badge>
             )}
           </span>
         ) : (
           <span className="text-slate-muted">—</span>
         ),
-      searchText: (c) => (c.propertyIds ?? []).map(propertyName).join(' '),
+      searchText: (c) => livePropertyIds(c).map(propertyName).join(' '),
     },
   ]
 
@@ -190,7 +193,7 @@ export function ContactsPage() {
                   ['Name', 'Company', 'Type', 'Email', 'Phone', 'Linked properties', 'Notes'],
                   rows.map((c) => [
                     c.name, c.company, c.type, c.email, c.phone,
-                    (c.propertyIds ?? []).map(propertyName).join('; '), c.notes,
+                    livePropertyIds(c).map(propertyName).join('; '), c.notes,
                   ]),
                 )
                 toast.success(`Exported ${rows.length} records → contacts.csv (check Downloads)`)
